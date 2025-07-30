@@ -4,20 +4,24 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import streamlit as st
 import numpy as np
+import pandas as pd
 from scipy.optimize import newton
 import plotly.graph_objects as go
-import pandas as pd
 
-@st.cache_data
-# Thorlabs Sellmeier coefficients
+# ---------------------------------------------------------------------------- #
+# Sellmeier + Thermo-Optic (Thorlabs model) for Type-0 PPKTP
+# ---------------------------------------------------------------------------- #
 
 def sellmeier(w, pol):
     if pol == 'z':
-        return np.sqrt(np.abs(2.12725 + (1.18431 / (w**2 - 0.0514852 ) + 0.6603 / (w**2 - 100.00507 ) - 9.68956e-3) * (w**2)))
+        return np.sqrt(np.abs(
+            2.12725 + (1.18431 / (w**2 - 0.0514852) + 0.6603 / (w**2 - 100.00507) - 9.68956e-3) * (w**2)
+        ))
     else:
-        return np.sqrt(np.abs(2.09930 + (0.922683 / (w**2 - 0.0467695 ) - 0.0138404) * (w**2)))
+        return np.sqrt(np.abs(
+            2.09930 + (0.922683 / (w**2 - 0.0467695) - 0.0138404) * (w**2)
+        ))
 
-@st.cache_data
 def temperature_dependence(w, pol):
     if pol == "z":
         return (1e-6 * (4.1010 * w**-3 - 8.9603 * w**-2 + 9.9228 * w**-1 + 9.9587) +
@@ -26,94 +30,85 @@ def temperature_dependence(w, pol):
         return (1e-6 * (2.6486 * w**-3 - 6.0629 * w**-2 + 6.3061 * w**-1 + 6.2897) +
                 1e-8 * (1.3470 * w**-3 - 3.5770 * w**-2 + 2.2244 * w**-1 - 0.14445))
 
-def nY_T(w, T):
-    return sellmeier(w, 'y') + temperature_dependence(w, 'y') * (T - 25)
+def n(w, T, pol, T_ref=25):
+    return sellmeier(w, pol) + temperature_dependence(w, pol) * (T - T_ref)
 
-def nZ_T(w, T):
-    return sellmeier(w, 'z') + temperature_dependence(w, 'z') * (T - 25)
+def poling_period(w1, w2, w3, T, T_ref=25):
+    return 1 / (n(w3, T, "z", T_ref) / w3 - n(w2, T, "z", T_ref) / w2 - n(w1, T, "z", T_ref) / w1)
 
-def QPM_period_original(w1, w2, w3, T):
-    return 1 / (nZ_T(w3, T) / w3 - nZ_T(w2, T) / w2 - nZ_T(w1, T) / w1)
-
-def solve_w1_for_period_newton(target_period, w3, T):
+def solve_w1_for_period(target_period, w3, T, T_ref=25):
     def equation(w1):
         w2 = 1 / (1 / w3 - 1 / w1)
-        return QPM_period_original(w1, w2, w3, T) - target_period
+        return poling_period(w1, w2, w3, T, T_ref) - target_period
 
     w1_guess = 1 / (1 / w3 - 1 / 0.9)
     return newton(equation, w1_guess)
 
-# Streamlit Interface
+# ---------------------------------------------------------------------------- #
+# Streamlit App
+# ---------------------------------------------------------------------------- #
 
 def run():
-    st.sidebar.header("Display Settings")
-    decimals = st.sidebar.slider("Decimal places:", 0, 10, 4)
+    
 
     st.sidebar.header("Simulation Parameters")
-    lambda_p = st.sidebar.number_input("Pump wavelength λp (µm):", 0.1, 2.0, value=0.405, format=f"%.{decimals}f", step=0.001)
+    decimals = st.sidebar.slider("Decimal places", 0, 10, 4)
+    w3 = st.sidebar.number_input("Pump Wavelength λp (µm)", 0.3, 1.0, 0.405, 0.001, format=f"%.{decimals}f")
+    w1_example = st.sidebar.number_input("Example Idler Wavelength λi (µm)", 0.7, 1.2, 0.81, 0.001, format=f"%.{decimals}f")
 
-    st.sidebar.subheader("Reference Configuration")
-    T0 = st.sidebar.number_input("Reference Temperature (°C):", 25.0, 100.0, value=35.0, format=f"%.{decimals}f")
+    T0 = st.sidebar.number_input("Operating Temp T₀ (°C)", 0.000, 150.000, 25.000, 1.000)
+    T_ref = st.sidebar.number_input("Reference Temp T_ref (°C)", 0.000, 150.000, 25.000, 1.000)
 
-    ref_method = st.sidebar.selectbox("Reference Setup:", ["Custom Signal", "Custom Idler"])
+    auto_calc = st.sidebar.checkbox("Auto-calculate Λ at T₀", value=True)
 
-    if ref_method == "Custom Signal":
-        w2_ref = st.sidebar.number_input("Signal wavelength (µm):", lambda_p*2, 2.0, value=0.81, format=f"%.{decimals}f")
-        w1_ref = 1 / (1 / lambda_p - 1 / w2_ref)
+    if auto_calc:
+        w2_example = 1 / (1 / w3 - 1 / w1_example)
+        Λ_fixed = poling_period(w1_example, w2_example, w3, T0, T_ref)
     else:
-        w1_ref = st.sidebar.number_input("Idler wavelength (µm):", lambda_p*2, 3.0, value=1.2, format=f"%.{decimals}f")
-        w2_ref = 1 / (1 / lambda_p - 1 / w1_ref)
+        Λ_fixed = st.sidebar.number_input("Poling Period Λ (µm)", 3.0000, 4.0000, 3.4250, 0.0001, format=f"%.{decimals}f")
 
-    try:
-        Λ_fixed = QPM_period_original(w1_ref, w2_ref, lambda_p, T0)
-        st.sidebar.success(f"Poling Period: {Λ_fixed:.{decimals}f} µm")
-    except:
-        st.sidebar.error("Invalid reference configuration")
+    T_min = st.sidebar.number_input("Min Temp (°C)", 0.000, 100.000, 25.000, 1.000)
+    T_max = st.sidebar.number_input("Max Temp (°C)", 25.000, 150.000, 75.000, 1.000)
+    points = st.sidebar.slider("Temperature Points", 10, 500, 51)
+
+    if T_max <= T_min:
+        st.sidebar.error("T_max must be greater than T_min.")
         return
 
-    # Fixed temperature range (not connected to reference temperature)
-    temps = np.linspace(20, 120, 100)
-    idlers, signals = [], []
+    # Compute tuning data
+    temps = np.linspace(T_min, T_max, points)
+    idlers = []
+    signals = []
 
     for T in temps:
         try:
-            w1 = solve_w1_for_period_newton(Λ_fixed, lambda_p, T)
-            w2 = 1 / (1 / lambda_p - 1 / w1)
-            idlers.append(w1)
-            signals.append(w2)
-        except:
+            w1 = solve_w1_for_period(Λ_fixed, w3, T, T_ref)
+            w2 = 1 / (1 / w3 - 1 / w1)
+            idlers.append(w1 * 1000)  # in nm
+            signals.append(w2 * 1000)
+        except RuntimeError:
             idlers.append(np.nan)
             signals.append(np.nan)
 
     # Plotting
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=temps, y=signals,
-        mode='lines+markers', name='Signal (λs)',
-        hovertemplate=f'T=%{{x:.2f}}°C<br>λs=%{{y:.{decimals}f}} µm<extra></extra>'
+        x=temps, y=signals, mode='lines+markers', name='Signal λs [nm]',
+        hovertemplate=f'T = %{{x:.2f}} °C<br>λs = %{{y:.{decimals}f}} nm'
     ))
     fig.add_trace(go.Scatter(
-        x=temps, y=idlers,
-        mode='lines+markers', name='Idler (λi)',
-        hovertemplate=f'T=%{{x:.2f}}°C<br>λi=%{{y:.{decimals}f}} µm<extra></extra>'
+        x=temps, y=idlers, mode='lines+markers', name='Idler λi [nm]',
+        hovertemplate=f'T = %{{x:.2f}} °C<br>λi = %{{y:.{decimals}f}} nm'
     ))
+
     fig.update_layout(
-        title=f'Tuning Curve: λp={lambda_p:.{decimals}f} µm, Λ={Λ_fixed:.{decimals}f} µm',
-        xaxis_title='Temperature (°C)', yaxis_title='Wavelength (µm)',
+        title=f'Type-0 SPDC Tuning Curve (λp = {w3:.{decimals}f} µm, Λ = {Λ_fixed:.{decimals}f} µm @ T₀ = {T0:.{decimals}f} °C)',
+        xaxis_title='Temperature [°C]',
+        yaxis_title='Wavelength [nm]',
         hovermode='x unified'
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Single-Temperature Output
-    st.subheader("Single-Temperature Analysis")
-    T_set = st.number_input("Select temperature (°C):", min_value=20.0, max_value=120.0, value=T0, format=f"%.{decimals}f")
-    if st.button("Compute λs & λi"):
-        try:
-            li = solve_w1_for_period_newton(Λ_fixed, lambda_p, T_set)
-            ls = 1 / (1 / lambda_p - 1 / li)
-            st.success(f"At T={T_set:.{decimals}f}°C → λi={li:.{decimals}f} µm, λs={ls:.{decimals}f} µm")
-        except Exception as e:
-            st.error(f"Calculation failed: {str(e)}")
-
 if __name__ == "__main__":
     run()
+
