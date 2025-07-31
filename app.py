@@ -55,7 +55,7 @@ def run():
     st.sidebar.header("Simulation Parameters")
     decimals = st.sidebar.slider("Decimal places", 0, 10, 4)
     w3 = st.sidebar.number_input("Pump Wavelength λp (µm)", 0.3, 1.0, 0.405, 0.001, format=f"%.{decimals}f")
-    w1_example = st.sidebar.number_input("Example Signal Wavelength λs (µm)", 0.7, 1.2, 0.81, 0.001, format=f"%.{decimals}f")
+    # w1_example = st.sidebar.number_input("Example Signal Wavelength λs (µm)", 0.7, 1.2, 0.81, 0.001, format=f"%.{decimals}f")
 
     T0 = st.sidebar.number_input("Operating Temp T₀ (°C)", 0.000, 70.000, 25.000, 1.000, format=f"%.{decimals}f")
     T_ref = st.sidebar.number_input("Reference Temp T_ref (°C)", 0.000, 150.000, 25.000, 1.000, format=f"%.{decimals}f")
