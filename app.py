@@ -9,7 +9,7 @@ from scipy.optimize import newton
 import plotly.graph_objects as go
 
 # ---------------------------------------------------------------------------- #
-# Sellmeier + Thermo-Optic (Thorlabs model) for Type-0 PPKTP
+# Sellmeier + Temperature dependence (Thorlabs model) for Type-0 PPKTP
 # ---------------------------------------------------------------------------- #
 
 def sellmeier(w, pol):
@@ -49,7 +49,7 @@ def solve_w1_for_period(target_period, w3, T, T_ref=25):
 # ---------------------------------------------------------------------------- #
 
 def run():
-    
+
 
     # Sidebar Inputs
     st.sidebar.header("Simulation Parameters")
@@ -60,7 +60,7 @@ def run():
     T0 = st.sidebar.number_input("Operating Temp T₀ (°C)", 0.000, 70.000, 25.000, 1.000, format=f"%.{decimals}f")
     T_ref = st.sidebar.number_input("Reference Temp T_ref (°C)", 0.000, 150.000, 25.000, 1.000, format=f"%.{decimals}f")
 
-    # 🔴 Check condition: T₀ > T_ref
+    # Check condition: T₀ > T_ref
     if T0 < T_ref:
         st.sidebar.error("Operating Temperature T₀ must be greater than or equal to Reference Temperature T_ref.")
         return
@@ -74,36 +74,46 @@ def run():
         Λ_fixed = st.sidebar.number_input("Poling Period Λ (µm)", 3.0000, 4.0000, 3.4250, 0.0001, format=f"%.{decimals}f")
 
     T_min = st.sidebar.number_input("Min Temp (°C)", 0.000, 100.000, 25.000, 1.000)
-    T_max = st.sidebar.number_input("Max Temp (°C)", 25.000, 150.000, 75.000, 1.000)
-    points = st.sidebar.slider("Temperature Points", 10, 500, 51)
-
+    T_max = st.sidebar.number_input("Max Temp (°C)", 25.000, 100.000, 75.000, 1.000)
+    # points = st.sidebar.slider("Resolution (# points):", 10, 200, 200)
+    points = st.sidebar.slider("Temperature Points", 10, 500, 150)
     if T_max <= T_min:
         st.sidebar.error("T_max must be greater than T_min.")
         return
 
-    # Compute tuning data
-    temps = np.linspace(T_min, T_max, points)
-    idlers = []
-    signals = []
+    #FIXED computation range (0–100°C)
+    calc_T_min = 0.0
+    calc_T_max = 100.0
+    calc_points = points
 
-    for T in temps:
+    calc_temps = np.linspace(calc_T_min, calc_T_max, calc_points)
+    calc_idlers = []
+    calc_signals = []
+
+    for T in calc_temps:
         try:
             w1 = solve_w1_for_period(Λ_fixed, w3, T, T_ref)
             w2 = 1 / (1 / w3 - 1 / w1)
-            idlers.append(w1 * 1000)  # nm
-            signals.append(w2 * 1000)
+            calc_idlers.append(w1 * 1000)  # in nm
+            calc_signals.append(w2 * 1000)
         except RuntimeError:
-            idlers.append(np.nan)
-            signals.append(np.nan)
+            calc_idlers.append(np.nan)
+            calc_signals.append(np.nan)
+
+    # Slice for plotting range
+    mask = (calc_temps >= T_min) & (calc_temps <= T_max)
+    plot_temps = calc_temps[mask]
+    plot_signals = np.array(calc_signals)[mask]
+    plot_idlers = np.array(calc_idlers)[mask]
 
     # Plot
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=temps, y=signals, mode='lines+markers', name='Signal λs [nm]',
+        x=plot_temps, y=plot_signals, mode='lines+markers', name='Signal λs [nm]',
         hovertemplate=f'T = %{{x:.2f}} °C<br>λs = %{{y:.{decimals}f}} nm'
     ))
     fig.add_trace(go.Scatter(
-        x=temps, y=idlers, mode='lines+markers', name='Idler λi [nm]',
+        x=plot_temps, y=plot_idlers, mode='lines+markers', name='Idler λi [nm]',
         hovertemplate=f'T = %{{x:.2f}} °C<br>λi = %{{y:.{decimals}f}} nm'
     ))
 
@@ -117,5 +127,4 @@ def run():
 
 if __name__ == "__main__":
     run()
-
 
