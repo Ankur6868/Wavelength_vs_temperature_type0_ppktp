@@ -51,13 +51,19 @@ def solve_w1_for_period(target_period, w3, T, T_ref=25):
 def run():
     
 
+    # Sidebar Inputs
     st.sidebar.header("Simulation Parameters")
     decimals = st.sidebar.slider("Decimal places", 0, 10, 4)
     w3 = st.sidebar.number_input("Pump Wavelength λp (µm)", 0.3, 1.0, 0.405, 0.001, format=f"%.{decimals}f")
     w1_example = st.sidebar.number_input("Example Signal Wavelength λi (µm)", 0.7, 1.2, 0.81, 0.001, format=f"%.{decimals}f")
 
-    T0 = st.sidebar.number_input("Operating Temp T₀ (°C)", 0.000, 150.000, 25.000, 1.000)
-    T_ref = st.sidebar.number_input("Reference Temp T_ref (°C)", 0.000, 150.000, 25.000, 1.000)
+    T0 = st.sidebar.number_input("Operating Temp T₀ (°C)", 0.000, 70.000, 25.000, 1.000, format=f"%.{decimals}f")
+    T_ref = st.sidebar.number_input("Reference Temp T_ref (°C)", 0.000, 150.000, 25.000, 1.000, format=f"%.{decimals}f")
+
+    # 🔴 Check condition: T₀ > T_ref
+    if T0 < T_ref:
+        st.sidebar.error("Operating Temperature T₀ must be greater than or equal to Reference Temperature T_ref.")
+        return
 
     auto_calc = st.sidebar.checkbox("Auto-calculate Λ at T₀", value=True)
 
@@ -84,13 +90,13 @@ def run():
         try:
             w1 = solve_w1_for_period(Λ_fixed, w3, T, T_ref)
             w2 = 1 / (1 / w3 - 1 / w1)
-            idlers.append(w1 * 1000)  # in nm
+            idlers.append(w1 * 1000)  # nm
             signals.append(w2 * 1000)
         except RuntimeError:
             idlers.append(np.nan)
             signals.append(np.nan)
 
-    # Plotting
+    # Plot
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=temps, y=signals, mode='lines+markers', name='Signal λs [nm]',
@@ -111,4 +117,5 @@ def run():
 
 if __name__ == "__main__":
     run()
+
 
