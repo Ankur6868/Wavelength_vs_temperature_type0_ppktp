@@ -4,7 +4,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import streamlit as st
 import numpy as np
-import pandas as pd
 from scipy.optimize import newton
 import plotly.graph_objects as go
 
@@ -50,17 +49,17 @@ def solve_w1_for_period(target_period, w3, T, T_ref=25):
 
 def run():
 
-
     # Sidebar Inputs
     st.sidebar.header("Simulation Parameters")
     decimals = st.sidebar.slider("Decimal places", 0, 10, 4)
     w3 = st.sidebar.number_input("Pump Wavelength λp (µm)", 0.3, 1.0, 0.405, 0.001, format=f"%.{decimals}f")
-    w1_example = st.sidebar.number_input("Example Signal Wavelength λs (µm)", 0.7, 1.2, 0.81, 0.001, format=f"%.{decimals}f")
+    
+    # 🔒 Hardcoded example λi for Λ calculation
+    w1_example = 0.81
 
     T0 = st.sidebar.number_input("Operating Temp T₀ (°C)", 0.000, 70.000, 25.000, 1.000, format=f"%.{decimals}f")
     T_ref = st.sidebar.number_input("Reference Temp T_ref (°C)", 0.000, 150.000, 25.000, 1.000, format=f"%.{decimals}f")
 
-    # Check condition: T₀ > T_ref
     if T0 < T_ref:
         st.sidebar.error("Operating Temperature T₀ must be greater than or equal to Reference Temperature T_ref.")
         return
@@ -75,13 +74,13 @@ def run():
 
     T_min = st.sidebar.number_input("Min Temp (°C)", 0.000, 100.000, 25.000, 1.000)
     T_max = st.sidebar.number_input("Max Temp (°C)", 25.000, 100.000, 75.000, 1.000)
-    # points = st.sidebar.slider("Resolution (# points):", 10, 200, 200)
-    points = st.sidebar.slider("Temperature Points", 10, 500, 150)
+    points = st.sidebar.slider("Temperature Points", 10, 1000, 250)
+
     if T_max <= T_min:
         st.sidebar.error("T_max must be greater than T_min.")
         return
 
-    #FIXED computation range (0–100°C)
+    # Fixed computation range
     calc_T_min = 0.0
     calc_T_max = 100.0
     calc_points = points
@@ -94,19 +93,19 @@ def run():
         try:
             w1 = solve_w1_for_period(Λ_fixed, w3, T, T_ref)
             w2 = 1 / (1 / w3 - 1 / w1)
-            calc_idlers.append(w1 * 1000)  # in nm
+            calc_idlers.append(w1 * 1000)
             calc_signals.append(w2 * 1000)
         except RuntimeError:
             calc_idlers.append(np.nan)
             calc_signals.append(np.nan)
 
-    # Slice for plotting range
+    # Slice to user-defined display range
     mask = (calc_temps >= T_min) & (calc_temps <= T_max)
     plot_temps = calc_temps[mask]
     plot_signals = np.array(calc_signals)[mask]
     plot_idlers = np.array(calc_idlers)[mask]
 
-    # Plot
+    # Plotting
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=plot_temps, y=plot_signals, mode='lines+markers', name='Signal λs [nm]',
