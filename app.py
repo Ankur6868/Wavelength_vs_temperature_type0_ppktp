@@ -4,6 +4,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import streamlit as st
 import numpy as np
+import pandas as pd
 from scipy.optimize import newton
 import plotly.graph_objects as go
 
@@ -48,14 +49,13 @@ def solve_w1_for_period(target_period, w3, T, T_ref=25):
 # ---------------------------------------------------------------------------- #
 
 def run():
+    
 
     # Sidebar Inputs
     st.sidebar.header("Simulation Parameters")
     decimals = st.sidebar.slider("Decimal places", 0, 10, 4)
     w3 = st.sidebar.number_input("Pump Wavelength λp (µm)", 0.3, 1.0, 0.405, 0.001, format=f"%.{decimals}f")
-    
-    # 🔒 Hardcoded example λi for Λ calculation
-    w1_example = 0.81
+    w1_example = st.sidebar.number_input("Example Signal Wavelength λi (µm)", 0.7, 1.2, 0.81, 0.001, format=f"%.{decimals}f")
 
     T0 = st.sidebar.number_input("Operating Temp T₀ (°C)", 0.000, 70.000, 25.000, 1.000, format=f"%.{decimals}f")
     T_ref = st.sidebar.number_input("Reference Temp T_ref (°C)", 0.000, 150.000, 25.000, 1.000, format=f"%.{decimals}f")
@@ -65,7 +65,6 @@ def run():
         return
 
     auto_calc = st.sidebar.checkbox("Auto-calculate Λ at T₀", value=True)
-
     if auto_calc:
         w2_example = 1 / (1 / w3 - 1 / w1_example)
         Λ_fixed = poling_period(w1_example, w2_example, w3, T0, T_ref)
@@ -74,13 +73,19 @@ def run():
 
     T_min = st.sidebar.number_input("Min Temp (°C)", 0.000, 100.000, 25.000, 1.000)
     T_max = st.sidebar.number_input("Max Temp (°C)", 25.000, 100.000, 75.000, 1.000)
-    points = st.sidebar.slider("Temperature Points", 10, 1000, 250)
+    points = st.sidebar.slider("Resolution (#Points)", 10, 1000, 433)
 
     if T_max <= T_min:
         st.sidebar.error("T_max must be greater than T_min.")
         return
 
-    # Fixed computation range
+    # Sidebar: Single-Temperature Analysis
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Single-Temperature Analysis")
+    selected_temp = st.sidebar.number_input("Select temperature (°C):", min_value=0.0, max_value=100.0, value=25.0, step=0.1, format="%.4f")
+    compute_btn = st.sidebar.button("Compute λs & λi")
+
+    # Fixed range computation (0–100°C)
     calc_T_min = 0.0
     calc_T_max = 100.0
     calc_points = points
@@ -99,13 +104,13 @@ def run():
             calc_idlers.append(np.nan)
             calc_signals.append(np.nan)
 
-    # Slice to user-defined display range
+    # Slice for plotting range
     mask = (calc_temps >= T_min) & (calc_temps <= T_max)
     plot_temps = calc_temps[mask]
     plot_signals = np.array(calc_signals)[mask]
     plot_idlers = np.array(calc_idlers)[mask]
 
-    # Plotting
+    # Plot
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=plot_temps, y=plot_signals, mode='lines+markers', name='Signal λs [nm]',
@@ -124,6 +129,18 @@ def run():
     )
     st.plotly_chart(fig, use_container_width=True)
 
+    # Output for single-temperature analysis
+    if compute_btn:
+        try:
+            w1_single = solve_w1_for_period(Λ_fixed, w3, selected_temp, T_ref)
+            w2_single = 1 / (1 / w3 - 1 / w1_single)
+            st.subheader("Single-Temperature Output")
+            st.markdown(f"**Selected Temperature:** {selected_temp:.4f} °C")
+            st.markdown(f"**λs = {w2_single:.4f} µm**, **λi = {w1_single:.4f} µm**")
+        except RuntimeError:
+            st.error("Computation failed at the selected temperature.")
+
 if __name__ == "__main__":
     run()
+
 
